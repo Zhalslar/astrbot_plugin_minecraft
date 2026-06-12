@@ -218,6 +218,32 @@ html, body {
   margin-bottom: 30px;
 }
 
+.standalone-launch-btn {
+  margin-bottom: 24px;
+  padding: 12px 24px;
+  border: 1px solid rgba(129, 199, 132, 0.55);
+  border-radius: 999px;
+  background: rgba(22, 52, 24, 0.72);
+  color: #e8f5e9;
+  font-size: 15px;
+  font-weight: bold;
+  font-family: inherit;
+  letter-spacing: 1px;
+  cursor: pointer;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+  transition: transform 0.12s ease-out, background 0.12s ease-out, box-shadow 0.12s ease-out;
+}
+
+.standalone-launch-btn:hover {
+  background: rgba(38, 90, 42, 0.82);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.34);
+  transform: translateY(-1px);
+}
+
+.standalone-launch-btn:active {
+  transform: translateY(0);
+}
+
 @keyframes hintBlink {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
@@ -372,6 +398,11 @@ html, body {
   .controls-info {
     padding: 14px 18px;
     margin: 0 16px;
+  }
+
+  .standalone-launch-btn {
+    font-size: 14px;
+    padding: 10px 18px;
   }
 
   .control-row {

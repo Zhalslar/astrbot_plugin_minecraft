@@ -11,6 +11,8 @@ import {
 } from './voxel.js';
 import { AnimalManager } from './animals.js';
 
+const PLUGIN_NAME = 'astrbot_plugin_minecraft';
+
 /* ============================================
    玩家类 - 第一人称角色控制
    ============================================ */
@@ -63,6 +65,12 @@ class Player {
 
   /** 每帧更新：物理、碰撞、视角 */
   update(dt) {
+    const prevX = this.position.x;
+    const prevY = this.position.y;
+    const prevZ = this.position.z;
+    const prevYaw = this.yaw;
+    const prevPitch = this.pitch;
+
     // 限制最大帧间隔，防止穿墙
     dt = Math.min(dt, 0.05);
 
@@ -168,6 +176,18 @@ class Player {
       this.camera.position.y + lookDir.y,
       this.camera.position.z + lookDir.z
     );
+
+    if (typeof this.onStateChanged === 'function') {
+      const changed =
+        Math.abs(this.position.x - prevX) > 1e-4 ||
+        Math.abs(this.position.y - prevY) > 1e-4 ||
+        Math.abs(this.position.z - prevZ) > 1e-4 ||
+        Math.abs(this.yaw - prevYaw) > 1e-4 ||
+        Math.abs(this.pitch - prevPitch) > 1e-4;
+      if (changed) {
+        this.onStateChanged();
+      }
+    }
 
     // 射线检测（目标方块）
     this._raycast();
@@ -630,6 +650,10 @@ class Game {
     this.highlight = null;
     this.touchController = null;
     this.animalManager = null;
+    this.bridge = window.AstrBotPluginPage || null;
+    this.saveData = null;
+    this.saveTimer = null;
+    this.saveInFlight = false;
 
     // 帧率统计
     this.clock = new THREE.Clock();
@@ -645,6 +669,7 @@ class Game {
       debugInfo: document.getElementById('debugInfo'),
       blockHighlight: document.getElementById('blockHighlight'),
       startScreen: document.getElementById('startScreen'),
+      standaloneLaunchBtn: document.getElementById('standaloneLaunchBtn'),
       pauseScreen: document.getElementById('pauseScreen'),
       loadingBar: document.getElementById('loadingBar'),
       loadingFill: document.getElementById('loadingFill'),
@@ -659,15 +684,171 @@ class Game {
     this.selectedSlot = 0;
   }
 
+  async _loadSaveData() {
+    try {
+      return await this._apiGet('save');
+    } catch (error) {
+      console.warn('Failed to load game save:', error);
+      return null;
+    }
+  }
+
+  async _apiGet(endpoint) {
+    if (window.self !== window.top && this.bridge?.apiGet) {
+      return await this.bridge.apiGet(endpoint);
+    }
+
+    const response = await fetch(`/api/plug/${PLUGIN_NAME}/${endpoint}`, {
+      credentials: 'same-origin',
+      headers: {
+        Accept: 'application/json',
+      },
+    });
+    const payload = await response.json();
+    if (!response.ok || payload?.ok === false) {
+      throw new Error(payload?.message || `GET ${endpoint} failed`);
+    }
+    return payload?.data ?? null;
+  }
+
+  async _apiPost(endpoint, body) {
+    if (window.self !== window.top && this.bridge?.apiPost) {
+      return await this.bridge.apiPost(endpoint, body);
+    }
+
+    const response = await fetch(`/api/plug/${PLUGIN_NAME}/${endpoint}`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(body || {}),
+    });
+    const payload = await response.json();
+    if (!response.ok || payload?.ok === false) {
+      throw new Error(payload?.message || `POST ${endpoint} failed`);
+    }
+    return payload?.data ?? payload;
+  }
+
+  _normalizeSaveData(saveData) {
+    if (!saveData || typeof saveData !== 'object') {
+      return null;
+    }
+    return {
+      version: Number.isInteger(saveData.version) ? saveData.version : 1,
+      seed: Number.isInteger(saveData.seed) ? saveData.seed : 12345,
+      player: saveData.player && typeof saveData.player === 'object' ? saveData.player : null,
+      world: saveData.world && typeof saveData.world === 'object' ? saveData.world : {},
+    };
+  }
+
+  _getDefaultSpawnState() {
+    return {
+      x: 5.4,
+      y: -27.0,
+      z: 22.6,
+      yaw: 0,
+      pitch: -0.3,
+      selectedSlot: 0,
+    };
+  }
+
+  _getResolvedPlayerState() {
+    const defaults = this._getDefaultSpawnState();
+    const playerState = this.saveData?.player;
+    if (!playerState) {
+      return defaults;
+    }
+    return {
+      x: Number.isFinite(playerState.x) ? playerState.x : defaults.x,
+      y: Number.isFinite(playerState.y) ? playerState.y : defaults.y,
+      z: Number.isFinite(playerState.z) ? playerState.z : defaults.z,
+      yaw: Number.isFinite(playerState.yaw) ? playerState.yaw : defaults.yaw,
+      pitch: Number.isFinite(playerState.pitch) ? playerState.pitch : defaults.pitch,
+      selectedSlot:
+        Number.isInteger(playerState.selectedSlot) &&
+        playerState.selectedSlot >= 0 &&
+        playerState.selectedSlot < this.blockTypes.length
+          ? playerState.selectedSlot
+          : defaults.selectedSlot,
+    };
+  }
+
+  _applyPlayerState(playerState) {
+    this._spawnX = playerState.x;
+    this._spawnY = playerState.y;
+    this._spawnZ = playerState.z;
+    this.player.position.set(playerState.x, playerState.y, playerState.z);
+    this.player.velocity.set(0, 0, 0);
+    this.player.yaw = playerState.yaw;
+    this.player.pitch = playerState.pitch;
+    this.selectedSlot = playerState.selectedSlot;
+    this._updateHotbar();
+  }
+
+  _buildSavePayload() {
+    return {
+      version: 1,
+      seed: this.world.seed,
+      player: {
+        x: this.player.position.x,
+        y: this.player.position.y,
+        z: this.player.position.z,
+        yaw: this.player.yaw,
+        pitch: this.player.pitch,
+        selectedSlot: this.selectedSlot,
+      },
+      world: this.world.exportSaveData(),
+    };
+  }
+
+  async _saveGameNow() {
+    if (!this.world || !this.player) {
+      return;
+    }
+    if (this.saveInFlight) {
+      return;
+    }
+    this.saveInFlight = true;
+    try {
+      await this._apiPost('save', this._buildSavePayload());
+    } catch (error) {
+      console.warn('Failed to save game:', error);
+    } finally {
+      this.saveInFlight = false;
+    }
+  }
+
+  _scheduleSave() {
+    if (this.saveTimer) {
+      return;
+    }
+    this.saveTimer = setTimeout(() => {
+      this.saveTimer = null;
+      void this._saveGameNow();
+    }, 800);
+  }
+
   /** 初始化游戏 */
   async init() {
+    this.saveData = this._normalizeSaveData(await this._loadSaveData());
     this._initRenderer();
     this._initScene();
     this._initPlayer();
+    this.player.onStateChanged = () => {
+      if (this.isRunning) {
+        this._scheduleSave();
+      }
+    };
     this._initHighlight();
     this._initHotbar();
     if (this.isMobile) this._initMobileHotbar();
     this._initEvents();
+    this.world.onWorldChanged = () => {
+      this._scheduleSave();
+    };
 
     // 设置预览视角：近距离平视"Coze"立墙
     this.camera.position.set(0, 23, 12);
@@ -718,13 +899,8 @@ class Game {
       }
     }
 
-    // 出生在用户指定位置（仅设玩家数据，相机保持在立墙视角）
-    this._spawnX = 5.4;
-    this._spawnZ = 22.6;
-    this._spawnY = -27.0;
-    this.player.position.set(this._spawnX, this._spawnY, this._spawnZ);
-    this.player.yaw = 0;              // 面朝正北，正对树叶文字立墙
-    this.player.pitch = -0.3;         // 微俯视，观赏立墙全貌
+    // 恢复玩家状态（或使用默认出生点）
+    this._applyPlayerState(this._getResolvedPlayerState());
 
     // 相机保持立墙预览视角，等用户点击开始后再切到玩家视角
     // 不做 camera.position 移动，保持背景一直是游戏世界
@@ -733,6 +909,10 @@ class Game {
 
     // 在世界中生成小机器人
     this.animalManager.spawnAnimals();
+
+    window.addEventListener('beforeunload', () => {
+      void this._saveGameNow();
+    });
   }
 
   /** 创建区块 */
@@ -784,8 +964,10 @@ class Game {
     this.scene.add(hemiLight);
 
     // 初始化世界并设置渲染距离
-    this.world = new World(this.scene);
+    const seed = this.saveData?.seed ?? 12345;
+    this.world = new World(this.scene, seed);
     this.world.renderDistance = this.renderDistance;
+    this.world.loadSaveData(this.saveData?.world || {});
     this.world.init();
 
     // 初始化机器人生成管理器
@@ -860,6 +1042,7 @@ class Game {
 
     // 同步更新移动端物品栏
     if (this.isMobile) this._updateMobileHotbar();
+    if (this.isRunning) this._scheduleSave();
   }
 
   /** 初始化移动端物品栏 */
@@ -1016,6 +1199,24 @@ class Game {
       }
       this._updateHotbar();
     });
+
+    if (this.ui.standaloneLaunchBtn) {
+      this.ui.standaloneLaunchBtn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const targetUrl = window.location.href;
+        const bridge = window.AstrBotPluginPage;
+        if (bridge?.apiPost) {
+          try {
+            await bridge.apiPost('open-standalone', { url: targetUrl });
+            return;
+          } catch (error) {
+            console.warn('Standalone launch via plugin API failed:', error);
+          }
+        }
+        window.open(targetUrl, '_blank', 'noopener,noreferrer');
+      });
+    }
 
     // ----- 桌面端：指针锁定逻辑 -----
     if (!this.isMobile) {

@@ -448,9 +448,18 @@ export class World {
     this.noise = new SimplexNoise(seed);
     this.treeNoise = new SimplexNoise(seed + 777);
     this.chunks = new Map();
+    this.modifiedBlocks = new Map();
     this.material = null;
     this.pendingChunks = [];
+    this.onWorldChanged = null;
     this.renderDistance = RENDER_DISTANCE;
+  }
+
+  setSeed(seed) {
+    const normalizedSeed = Number.isInteger(seed) ? seed : 12345;
+    this.seed = normalizedSeed;
+    this.noise = new SimplexNoise(normalizedSeed);
+    this.treeNoise = new SimplexNoise(normalizedSeed + 777);
   }
 
   init() {
@@ -473,6 +482,30 @@ export class World {
     return `${cx},${cz}`;
   }
 
+  blockKey(wx, wy, wz) {
+    return `${wx},${wy},${wz}`;
+  }
+
+  loadSaveData(saveWorld = {}) {
+    this.modifiedBlocks.clear();
+    const modifiedBlocks = saveWorld?.modified_blocks;
+    if (!modifiedBlocks || typeof modifiedBlocks !== 'object') {
+      return;
+    }
+
+    for (const [key, value] of Object.entries(modifiedBlocks)) {
+      const blockType = Number(value);
+      if (!Number.isInteger(blockType)) continue;
+      this.modifiedBlocks.set(key, blockType);
+    }
+  }
+
+  exportSaveData() {
+    return {
+      modified_blocks: Object.fromEntries(this.modifiedBlocks),
+    };
+  }
+
   getBlock(wx, wy, wz) {
     if (wy < 0 || wy >= CHUNK_HEIGHT) return BlockType.AIR;
     const cx = Math.floor(wx / CHUNK_SIZE);
@@ -493,11 +526,16 @@ export class World {
     const lx = ((wx % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
     const lz = ((wz % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
     chunk.setBlock(lx, wy, lz, type);
+    this.modifiedBlocks.set(this.blockKey(wx, wy, wz), type);
 
     if (lx === 0) this._markDirty(cx - 1, cz);
     if (lx === CHUNK_SIZE - 1) this._markDirty(cx + 1, cz);
     if (lz === 0) this._markDirty(cx, cz - 1);
     if (lz === CHUNK_SIZE - 1) this._markDirty(cx, cz + 1);
+
+    if (typeof this.onWorldChanged === 'function') {
+      this.onWorldChanged({ x: wx, y: wy, z: wz, type });
+    }
   }
 
   _markDirty(cx, cz) {
@@ -513,6 +551,7 @@ export class World {
     // === 文字区域：使用独立的 TextWall 模块 ===
     if (textWall.isInTextZone(cx, cz, CHUNK_SIZE)) {
       textWall.generateTextZoneChunk(chunk, CHUNK_SIZE, CHUNK_HEIGHT);
+      this._applyChunkModifications(chunk);
       return;
     }
 
@@ -546,6 +585,7 @@ export class World {
     }
 
     this._generateTrees(chunk);
+    this._applyChunkModifications(chunk);
   }
 
   /** 在区块中生成树木 */
@@ -604,6 +644,39 @@ export class World {
           }
         }
       }
+    }
+  }
+
+  _applyChunkModifications(chunk) {
+    if (this.modifiedBlocks.size === 0) return;
+
+    const wx0 = chunk.cx * CHUNK_SIZE;
+    const wz0 = chunk.cz * CHUNK_SIZE;
+    const wx1 = wx0 + CHUNK_SIZE - 1;
+    const wz1 = wz0 + CHUNK_SIZE - 1;
+
+    for (const [key, value] of this.modifiedBlocks) {
+      const [rawX, rawY, rawZ] = key.split(',');
+      const wx = Number(rawX);
+      const wy = Number(rawY);
+      const wz = Number(rawZ);
+      if (
+        !Number.isInteger(wx) ||
+        !Number.isInteger(wy) ||
+        !Number.isInteger(wz) ||
+        wy < 0 ||
+        wy >= CHUNK_HEIGHT ||
+        wx < wx0 ||
+        wx > wx1 ||
+        wz < wz0 ||
+        wz > wz1
+      ) {
+        continue;
+      }
+
+      const lx = wx - wx0;
+      const lz = wz - wz0;
+      chunk.setBlock(lx, wy, lz, value);
     }
   }
 
