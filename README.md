@@ -1,6 +1,17 @@
+<div align="center">
+
+![:name](https://count.getloli.com/@astrbot_plugin_minecraft?name=astrbot_plugin_minecraft&theme=minecraft&padding=7&offset=0&align=top&scale=1&pixelated=1&darkmode=auto)
+
 # astrbot_plugin_minecraft
 
 _✨ 方块世界 ✨_
+
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
+[![AstrBot](https://img.shields.io/badge/AstrBot-3.4%2B-orange.svg)](https://github.com/Soulter/AstrBot)
+[![GitHub](https://img.shields.io/badge/作者-Zhalslar-blue)](https://github.com/Zhalslar)
+
+</div>
 
 ## 项目概览
 
@@ -10,6 +21,9 @@ _✨ 方块世界 ✨_
 
 <img width="1920" height="908" alt="tmp679F" src="https://github.com/user-attachments/assets/fb3f0229-5e5b-49c9-8cf3-6f8f7ba56227" />
 
+## 📦 安装
+
+在 AstrBot 的插件市场搜索 `astrbot_plugin_minesweeper`，点击安装即可。
 
 ## 技术栈
 
