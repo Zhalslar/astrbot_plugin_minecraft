@@ -23,7 +23,8 @@ _✨ 方块世界 ✨_
 
 ## 📦 安装
 
-在 AstrBot 的插件市场搜索 `astrbot_plugin_minecraft`，点击安装即可。
+- 上架前：在Astrbot面板上通过链接安装: https://github.com/Zhalslar/astrbot_plugin_minecraft
+- 上线后：在 AstrBot 的插件市场搜索 `astrbot_plugin_minecraft`，点击安装即可。
 
 ## 技术栈
 
