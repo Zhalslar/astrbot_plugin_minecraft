@@ -23,7 +23,7 @@ _✨ 方块世界 ✨_
 
 ## 📦 安装
 
-在 AstrBot 的插件市场搜索 `astrbot_plugin_minesweeper`，点击安装即可。
+在 AstrBot 的插件市场搜索 `astrbot_plugin_minecraft`，点击安装即可。
 
 ## 技术栈
 
